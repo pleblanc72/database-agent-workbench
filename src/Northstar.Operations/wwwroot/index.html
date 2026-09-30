@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Northstar Reservations | Operations Console</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/site.css">
+    <script src="js/operations.js" defer></script>
+</head>
+<body>
+    <main class="page-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Northstar Reservations</p>
+                <h1>Operations Console</h1>
+                <p class="subtitle">Live operational control and database activity for reservation workloads and business activities.</p>
+            </div>
+            <div class="connection-state" id="connection-state" role="status">
+                <span class="status-dot"></span>
+                <span>Connecting</span>
+            </div>
+        </header>
+
+        <section class="control-panel" aria-labelledby="workload-heading">
+            <div>
+                <p class="section-label">Application workload</p>
+                <h2 id="workload-heading">Normal reservation activity</h2>
+                <p>Availability searches, reservation servicing, payments, property operations, and reporting.</p>
+            </div>
+            <div class="control-actions">
+                <span class="workload-state stopped" id="workload-state">Stopped</span>
+                <button class="button button-primary" id="start-button" type="button">Start workload</button>
+                <button class="button button-secondary" id="stop-button" type="button" disabled>Stop workload</button>
+            </div>
+        </section>
+
+        <section class="metrics-section" aria-labelledby="normal-metrics-heading">
+            <div class="section-heading section-heading-row">
+                <div>
+                    <p class="section-label">Normal workload metrics</p>
+                    <h2 id="normal-metrics-heading">Baseline application activity</h2>
+                    <p>These values update only while the normal reservation workload is running.</p>
+                </div>
+            </div>
+            <div class="metrics-grid">
+                <article class="metric-card metric-card-accent">
+                    <p>Normal requests per minute</p>
+                    <strong id="requests-per-minute">0</strong>
+                    <span>Rolling one-minute completion rate</span>
+                </article>
+                <article class="metric-card">
+                    <p>Normal workload workers</p>
+                    <strong id="active-workers">0</strong>
+                    <span>Currently active worker tasks</span>
+                </article>
+                <article class="metric-card">
+                    <p>Completed normal requests</p>
+                    <strong id="completed-requests">0</strong>
+                    <span>Total for the current or latest run</span>
+                </article>
+                <article class="metric-card">
+                    <p>Failed normal requests</p>
+                    <strong id="failed-requests">0</strong>
+                    <span>Total for the current or latest run</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="metrics-section" aria-labelledby="database-metrics-heading">
+            <div class="section-heading section-heading-row">
+                <div>
+                    <p class="section-label">Database activity</p>
+                    <h2 id="database-metrics-heading">All application activity</h2>
+                    <p>These values include the normal workload and every running business activity.</p>
+                </div>
+                <p class="refresh-note">Last refreshed <strong id="last-refreshed">—</strong></p>
+            </div>
+            <div class="metrics-grid database-metrics-grid">
+                <article class="metric-card">
+                    <p>Active database requests</p>
+                    <strong id="active-requests">0</strong>
+                    <span>Current user requests from all activities</span>
+                </article>
+                <article class="metric-card">
+                    <p>Blocked database requests</p>
+                    <strong id="blocked-requests">0</strong>
+                    <span>All requests waiting on another session</span>
+                </article>
+                <article class="metric-card">
+                    <p>Longest active request</p>
+                    <strong><span id="longest-request">0</span><small>s</small></strong>
+                    <span>Longest elapsed time across all activities</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="activities-panel" aria-labelledby="activities-heading">
+            <div class="section-heading">
+                <p class="section-label">Business activities</p>
+                <h2 id="activities-heading">Operational events</h2>
+                <p>Each activity reports its own workers, throughput, completed work, and failures.</p>
+            </div>
+            <div class="activity-grid" id="activity-grid"></div>
+        </section>
+
+        <p class="message" id="message" role="alert" aria-live="polite"></p>
+    </main>
+</body>
+</html>

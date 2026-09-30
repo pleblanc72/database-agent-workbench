@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.playwright-mcp/
+northstar-phase3-console.png
+*.user
+*.suo

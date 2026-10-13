@@ -93,6 +93,8 @@ Now listening on: http://localhost:5055
 
 Open [http://localhost:5055](http://localhost:5055) in a browser. Keep the terminal running while using the console. Select **Start workload** to begin normal reservation activity and **Stop workload** to stop it without shutting down the console.
 
+The **Database target** panel can check and switch to another SQL server and database without restarting the application. Enter the server and database names, select **Check readiness**, review the required assets, data, permissions, and monitoring results, and then select **Switch database**. A successful switch stops all running workloads and leaves them stopped. The application reuses the authentication settings from the configured `ConnectionStrings:Northstar` connection string; credentials and tokens are never sent to the browser. The selected target lasts for the current application process; restarting the app restores the configured connection-string target.
+
 Press `Ctrl+C` in the terminal to shut down the application. If the browser reports that it cannot reach the page, confirm that the `dotnet run` command is still running and use the exact URL printed after `Now listening on:`.
 
 For subsequent runs, only the `dotnet run` command is required unless the database connection or application dependencies change.

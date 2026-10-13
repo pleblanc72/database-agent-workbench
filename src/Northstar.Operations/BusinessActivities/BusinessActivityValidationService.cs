@@ -49,6 +49,17 @@ public sealed partial class BusinessActivityValidationService(
     private Task? _runningTask;
     private string? _runningActivityId;
 
+    public bool HasRunningValidation
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _runningActivityId is not null;
+            }
+        }
+    }
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;

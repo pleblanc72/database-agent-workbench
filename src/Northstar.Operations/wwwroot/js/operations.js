@@ -47,6 +47,17 @@ const businessActivities = [
 
 const elements = {
     connectionState: document.querySelector("#connection-state"),
+    databaseTargetForm: document.querySelector("#database-target-form"),
+    databaseServer: document.querySelector("#database-server"),
+    databaseName: document.querySelector("#database-name"),
+    currentDatabaseTarget: document.querySelector("#current-database-target"),
+    checkDatabaseButton: document.querySelector("#check-database-button"),
+    switchDatabaseButton: document.querySelector("#switch-database-button"),
+    databaseReadiness: document.querySelector("#database-readiness"),
+    databaseReadinessSummary: document.querySelector("#database-readiness-summary"),
+    databaseReadinessTime: document.querySelector("#database-readiness-time"),
+    databaseReadinessChecks: document.querySelector("#database-readiness-checks"),
+    databaseTargetMessage: document.querySelector("#database-target-message"),
     workloadState: document.querySelector("#workload-state"),
     startButton: document.querySelector("#start-button"),
     stopButton: document.querySelector("#stop-button"),
@@ -66,6 +77,7 @@ const activityElements = new Map();
 const activityRateSamples = new Map();
 const activityCommandsInProgress = new Set();
 let workloadCommandInProgress = false;
+let databaseCommandInProgress = false;
 
 function createBusinessActivityCards() {
     for (const activity of businessActivities) {
@@ -134,12 +146,23 @@ function createBusinessActivityCards() {
 
 async function request(url, options) {
     const response = await fetch(url, options);
+    const contentType = response.headers.get("content-type") ?? "";
+    const body = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+
     if (!response.ok) {
-        const body = await response.text();
-        throw new Error(body || `Request failed with status ${response.status}`);
+        const message =
+            body?.error
+            ?? body?.message
+            ?? (typeof body === "string" ? body : null)
+            ?? `Request failed with status ${response.status}`;
+        const error = new Error(message);
+        error.data = body;
+        throw error;
     }
 
-    return response.json();
+    return body;
 }
 
 function setConnectionState(isConnected) {
@@ -156,8 +179,10 @@ function renderStatus(status) {
     elements.workloadState.textContent = workload.isRunning ? "Running" : "Stopped";
     elements.workloadState.classList.toggle("running", workload.isRunning);
     elements.workloadState.classList.toggle("stopped", !workload.isRunning);
-    elements.startButton.disabled = workload.isRunning || workloadCommandInProgress;
-    elements.stopButton.disabled = !workload.isRunning || workloadCommandInProgress;
+    elements.startButton.disabled =
+        workload.isRunning || workloadCommandInProgress || databaseCommandInProgress;
+    elements.stopButton.disabled =
+        !workload.isRunning || workloadCommandInProgress || databaseCommandInProgress;
     elements.requestsPerMinute.textContent = workload.requestsPerMinute.toLocaleString();
     elements.activeRequests.textContent = database.activeRequestCount.toLocaleString();
     elements.blockedRequests.textContent = database.blockedRequestCount.toLocaleString();
@@ -181,10 +206,15 @@ function renderActivityStatus(activity, status, validation, anyValidationRunning
     card.rate.textContent = calculateActivityRate(activity, status).toLocaleString();
     card.completed.textContent = status[activity.completedProperty].toLocaleString();
     card.failed.textContent = status[activity.failedProperty].toLocaleString();
-    card.startButton.disabled = status.isRunning || commandInProgress;
-    card.stopButton.disabled = !status.isRunning || commandInProgress || validationIsRunning;
+    card.startButton.disabled =
+        status.isRunning || commandInProgress || databaseCommandInProgress;
+    card.stopButton.disabled =
+        !status.isRunning
+        || commandInProgress
+        || validationIsRunning
+        || databaseCommandInProgress;
     card.validationButton.disabled =
-        commandInProgress || anyValidationRunning;
+        commandInProgress || anyValidationRunning || databaseCommandInProgress;
     card.validationButton.textContent =
         validationIsRunning ? "Validation running..." : "Run validation";
     card.validationStatus.textContent = validation.message;
@@ -308,9 +338,129 @@ async function startActivityValidation(activity) {
     }
 }
 
+function getRequestedDatabaseTarget() {
+    return {
+        server: elements.databaseServer.value.trim(),
+        database: elements.databaseName.value.trim()
+    };
+}
+
+function setDatabaseControlsBusy(isBusy, action) {
+    databaseCommandInProgress = isBusy;
+    elements.databaseServer.disabled = isBusy;
+    elements.databaseName.disabled = isBusy;
+    elements.checkDatabaseButton.disabled = isBusy;
+    elements.switchDatabaseButton.disabled = isBusy;
+
+    elements.checkDatabaseButton.textContent =
+        isBusy && action === "check" ? "Checking..." : "Check readiness";
+    elements.switchDatabaseButton.textContent =
+        isBusy && action === "switch" ? "Switching..." : "Switch database";
+}
+
+function renderDatabaseReadiness(readiness) {
+    elements.databaseReadiness.hidden = false;
+    elements.databaseReadiness.dataset.ready = readiness.ready.toString();
+    elements.databaseReadinessSummary.textContent =
+        readiness.ready ? "Ready to run workloads" : "Not ready to switch";
+    elements.databaseReadinessTime.textContent =
+        `Checked ${new Date(readiness.checkedAt).toLocaleTimeString()}`;
+    elements.databaseReadinessChecks.replaceChildren();
+
+    for (const check of readiness.checks) {
+        const item = document.createElement("li");
+        item.dataset.status = check.status.toLowerCase();
+
+        const heading = document.createElement("strong");
+        heading.textContent = `${check.status}: ${check.name}`;
+        const message = document.createElement("span");
+        message.textContent = check.message;
+
+        item.append(heading, message);
+        elements.databaseReadinessChecks.append(item);
+    }
+}
+
+async function loadCurrentDatabaseTarget() {
+    const target = await request("/api/database-target");
+    elements.currentDatabaseTarget.textContent = `${target.server} / ${target.database}`;
+    elements.databaseServer.value = target.server;
+    elements.databaseName.value = target.database;
+}
+
+async function checkDatabaseTarget() {
+    if (!elements.databaseTargetForm.reportValidity()) {
+        return;
+    }
+
+    setDatabaseControlsBusy(true, "check");
+    elements.databaseTargetMessage.textContent = "";
+    delete elements.databaseTargetMessage.dataset.state;
+
+    try {
+        const readiness = await request("/api/database-target/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(getRequestedDatabaseTarget())
+        });
+        renderDatabaseReadiness(readiness);
+    } catch (error) {
+        elements.databaseTargetMessage.textContent =
+            `Unable to check the database: ${error.message}`;
+        elements.databaseTargetMessage.dataset.state = "error";
+    } finally {
+        setDatabaseControlsBusy(false);
+        await refreshStatus();
+    }
+}
+
+async function switchDatabaseTarget(event) {
+    event.preventDefault();
+    if (!elements.databaseTargetForm.reportValidity()) {
+        return;
+    }
+
+    const confirmed = window.confirm(
+        "Switching stops all running workloads and leaves them stopped. Continue?");
+    if (!confirmed) {
+        return;
+    }
+
+    setDatabaseControlsBusy(true, "switch");
+    elements.databaseTargetMessage.textContent = "";
+    delete elements.databaseTargetMessage.dataset.state;
+
+    try {
+        const result = await request("/api/database-target/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(getRequestedDatabaseTarget())
+        });
+        renderDatabaseReadiness(result.readiness);
+        elements.databaseTargetMessage.textContent = result.message;
+        elements.databaseTargetMessage.dataset.state = "success";
+        await loadCurrentDatabaseTarget();
+    } catch (error) {
+        if (error.data?.readiness) {
+            renderDatabaseReadiness(error.data.readiness);
+        }
+        elements.databaseTargetMessage.textContent =
+            `Unable to switch the database: ${error.message}`;
+        elements.databaseTargetMessage.dataset.state = "error";
+    } finally {
+        setDatabaseControlsBusy(false);
+        await refreshStatus();
+    }
+}
+
 createBusinessActivityCards();
 elements.startButton.addEventListener("click", () => sendWorkloadCommand("start"));
 elements.stopButton.addEventListener("click", () => sendWorkloadCommand("stop"));
+elements.checkDatabaseButton.addEventListener("click", checkDatabaseTarget);
+elements.databaseTargetForm.addEventListener("submit", switchDatabaseTarget);
 
-refreshStatus();
+Promise.all([loadCurrentDatabaseTarget(), refreshStatus()]).catch(error => {
+    elements.databaseTargetMessage.textContent =
+        `Unable to load the database target: ${error.message}`;
+});
 setInterval(refreshStatus, 2000);

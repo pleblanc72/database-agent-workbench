@@ -75,6 +75,7 @@ builder.Services
     .ValidateOnStart();
 
 builder.Services.AddSingleton<SqlConnectionFactory>();
+builder.Services.AddSingleton<DatabaseReadinessService>();
 builder.Services.AddSingleton<NorthstarRepository>();
 builder.Services.AddSingleton<WorkloadMetrics>();
 builder.Services.AddSingleton<NormalWorkloadService>();
@@ -95,11 +96,45 @@ builder.Services.AddHostedService(serviceProvider =>
 builder.Services.AddSingleton<BusinessActivityValidationService>();
 builder.Services.AddHostedService(serviceProvider =>
     serviceProvider.GetRequiredService<BusinessActivityValidationService>());
+builder.Services.AddSingleton<DatabaseTargetManager>();
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.MapGet("/api/database-target", (DatabaseTargetManager targetManager) =>
+    Results.Ok(targetManager.CurrentTarget));
+
+app.MapPost("/api/database-target/check", async (
+    DatabaseTargetRequest request,
+    DatabaseTargetManager targetManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!TryValidateTarget(request, out var target, out var error))
+    {
+        return Results.BadRequest(new { Error = error });
+    }
+
+    var readiness = await targetManager.CheckAsync(target!, cancellationToken);
+    return Results.Ok(readiness);
+});
+
+app.MapPost("/api/database-target/switch", async (
+    DatabaseTargetRequest request,
+    DatabaseTargetManager targetManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!TryValidateTarget(request, out var target, out var error))
+    {
+        return Results.BadRequest(new { Error = error });
+    }
+
+    var result = await targetManager.SwitchAsync(target!, cancellationToken);
+    return result.Switched
+        ? Results.Ok(result)
+        : Results.Conflict(result);
+});
 
 app.MapGet("/api/operations/status", async (
     NormalWorkloadService workload,
@@ -117,9 +152,12 @@ app.MapGet("/api/operations/status", async (
 
 app.MapPost("/api/operations/workload/start", async (
     NormalWorkloadService workload,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var started = await workload.StartWorkloadAsync(cancellationToken);
+    var started = await targetManager.ExecuteStartAsync(
+        () => workload.StartWorkloadAsync(cancellationToken),
+        cancellationToken);
     return Results.Ok(new
     {
         Changed = started,
@@ -145,9 +183,12 @@ app.MapGet("/api/activities/reservation-modification-surge/status", (
 
 app.MapPost("/api/activities/reservation-modification-surge/start", async (
     ReservationModificationSurgeService activity,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var started = await activity.StartActivityAsync(cancellationToken);
+    var started = await targetManager.ExecuteStartAsync(
+        () => activity.StartActivityAsync(cancellationToken),
+        cancellationToken);
     return Results.Ok(new
     {
         Changed = started,
@@ -173,9 +214,12 @@ app.MapGet("/api/activities/flexible-date-search-campaign/status", (
 
 app.MapPost("/api/activities/flexible-date-search-campaign/start", async (
     FlexibleDateSearchCampaignService activity,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var started = await activity.StartActivityAsync(cancellationToken);
+    var started = await targetManager.ExecuteStartAsync(
+        () => activity.StartActivityAsync(cancellationToken),
+        cancellationToken);
     return Results.Ok(new
     {
         Changed = started,
@@ -201,9 +245,12 @@ app.MapGet("/api/activities/guest-stay-history-export/status", (
 
 app.MapPost("/api/activities/guest-stay-history-export/start", async (
     GuestStayHistoryExportService activity,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var started = await activity.StartActivityAsync(cancellationToken);
+    var started = await targetManager.ExecuteStartAsync(
+        () => activity.StartActivityAsync(cancellationToken),
+        cancellationToken);
     return Results.Ok(new
     {
         Changed = started,
@@ -229,9 +276,12 @@ app.MapGet("/api/activities/portfolio-revenue-reconciliation/status", (
 
 app.MapPost("/api/activities/portfolio-revenue-reconciliation/start", async (
     PortfolioRevenueReconciliationService activity,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var started = await activity.StartActivityAsync(cancellationToken);
+    var started = await targetManager.ExecuteStartAsync(
+        () => activity.StartActivityAsync(cancellationToken),
+        cancellationToken);
     return Results.Ok(new
     {
         Changed = started,
@@ -263,9 +313,12 @@ app.MapGet("/api/activities/{activityId}/validation/status", (
 app.MapPost("/api/activities/{activityId}/validation/start", async (
     string activityId,
     BusinessActivityValidationService validation,
+    DatabaseTargetManager targetManager,
     CancellationToken cancellationToken) =>
 {
-    var result = await validation.TryStartAsync(activityId, cancellationToken);
+    var result = await targetManager.ExecuteStartAsync(
+        () => validation.TryStartAsync(activityId, cancellationToken),
+        cancellationToken);
 
     if (result.Started)
     {
@@ -293,3 +346,24 @@ app.MapGet("/health", (
 }));
 
 app.Run();
+
+static bool TryValidateTarget(
+    DatabaseTargetRequest request,
+    out DatabaseTarget? target,
+    out string? error)
+{
+    try
+    {
+        target = SqlConnectionFactory.ValidateTarget(request.Server, request.Database);
+        error = null;
+        return true;
+    }
+    catch (ArgumentException exception)
+    {
+        target = null;
+        error = exception.Message;
+        return false;
+    }
+}
+
+public sealed record DatabaseTargetRequest(string? Server, string? Database);

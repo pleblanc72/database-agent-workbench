@@ -31,6 +31,10 @@ button {
     font: inherit;
 }
 
+input {
+    font: inherit;
+}
+
 .page-shell {
     width: min(1180px, calc(100% - 40px));
     margin: 0 auto;
@@ -121,7 +125,8 @@ h2 {
 }
 
 .control-panel,
-.activities-panel {
+.activities-panel,
+.database-target-panel {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -131,6 +136,152 @@ h2 {
     background: var(--surface);
     padding: 28px 30px;
     box-shadow: var(--shadow);
+}
+
+.database-target-panel {
+    display: block;
+    margin-bottom: 22px;
+}
+
+.database-target-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.database-target-heading p {
+    margin-bottom: 0;
+    color: var(--muted);
+}
+
+.database-target-heading strong {
+    color: var(--ink);
+}
+
+.database-target-note {
+    max-width: 300px;
+    text-align: right;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.database-target-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 14px;
+    margin-top: 24px;
+}
+
+.database-target-form label {
+    display: grid;
+    gap: 7px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 650;
+}
+
+.database-target-form input {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 9px 12px;
+    color: var(--ink);
+}
+
+.database-target-form input:focus {
+    border-color: var(--accent);
+    outline: 3px solid rgba(47, 135, 216, 0.16);
+}
+
+.database-target-form input:disabled {
+    background: var(--surface-soft);
+    color: var(--muted);
+}
+
+.database-target-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.database-readiness {
+    margin-top: 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-soft);
+    padding: 16px 18px;
+}
+
+.database-readiness[data-ready="true"] {
+    border-color: rgba(22, 128, 90, 0.28);
+    background: rgba(22, 128, 90, 0.05);
+}
+
+.database-readiness[data-ready="false"] {
+    border-color: rgba(182, 70, 70, 0.28);
+    background: rgba(182, 70, 70, 0.05);
+}
+
+.database-readiness-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.database-readiness-heading span {
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.database-readiness ul {
+    display: grid;
+    gap: 10px;
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.database-readiness li {
+    display: grid;
+    gap: 3px;
+    border-left: 3px solid var(--border);
+    padding-left: 11px;
+}
+
+.database-readiness li[data-status="passed"] {
+    border-color: var(--success);
+}
+
+.database-readiness li[data-status="failed"] {
+    border-color: var(--danger);
+}
+
+.database-readiness li[data-status="warning"] {
+    border-color: #e09a32;
+}
+
+.database-readiness li strong {
+    font-size: 0.82rem;
+}
+
+.database-readiness li span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.database-target-message {
+    min-height: 20px;
+    margin: 14px 0 0;
+    color: var(--danger);
+    font-size: 0.86rem;
+}
+
+.database-target-message[data-state="success"] {
+    color: var(--success);
 }
 
 .control-panel p {
@@ -432,9 +583,23 @@ h2 {
     }
 
     .control-panel,
-    .section-heading-row {
+    .section-heading-row,
+    .database-target-heading {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .database-target-note {
+        max-width: none;
+        text-align: left;
+    }
+
+    .database-target-form {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .database-target-actions {
+        grid-column: 1 / -1;
     }
 
     .activity-grid {
@@ -470,8 +635,18 @@ h2 {
     }
 
     .control-panel,
-    .activities-panel {
+    .activities-panel,
+    .database-target-panel {
         padding: 22px;
+    }
+
+    .database-target-form {
+        grid-template-columns: 1fr;
+    }
+
+    .database-target-actions {
+        grid-column: auto;
+        flex-direction: column;
     }
 
     .control-actions .button {

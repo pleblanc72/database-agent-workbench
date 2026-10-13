@@ -22,6 +22,60 @@
             </div>
         </header>
 
+        <section class="database-target-panel" aria-labelledby="database-target-heading">
+            <div class="database-target-heading">
+                <div>
+                    <p class="section-label">Database target</p>
+                    <h2 id="database-target-heading">Active SQL database</h2>
+                    <p>
+                        Current target:
+                        <strong id="current-database-target">Loading...</strong>
+                    </p>
+                </div>
+                <p class="database-target-note">
+                    Uses the configured authentication settings. The selection resets when the app restarts.
+                </p>
+            </div>
+            <form class="database-target-form" id="database-target-form">
+                <label>
+                    <span>Server</span>
+                    <input
+                        id="database-server"
+                        name="server"
+                        type="text"
+                        maxlength="256"
+                        autocomplete="off"
+                        required>
+                </label>
+                <label>
+                    <span>Database</span>
+                    <input
+                        id="database-name"
+                        name="database"
+                        type="text"
+                        maxlength="128"
+                        autocomplete="off"
+                        required>
+                </label>
+                <div class="database-target-actions">
+                    <button class="button button-secondary" id="check-database-button" type="button">
+                        Check readiness
+                    </button>
+                    <button class="button button-primary" id="switch-database-button" type="submit">
+                        Switch database
+                    </button>
+                </div>
+            </form>
+            <div class="database-readiness" id="database-readiness" hidden>
+                <div class="database-readiness-heading">
+                    <strong id="database-readiness-summary"></strong>
+                    <span id="database-readiness-time"></span>
+                </div>
+                <ul id="database-readiness-checks"></ul>
+            </div>
+            <p class="database-target-message" id="database-target-message" role="status"></p>
+        </section>
+
         <section class="control-panel" aria-labelledby="workload-heading">
             <div>
                 <p class="section-label">Application workload</p>

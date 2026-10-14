@@ -13,6 +13,113 @@ Select **Run validation** whether the activity is running or stopped. If needed,
 
 Only one validation can run at a time. The activity's **Stop** button is disabled while its validation is running so the sample window is not interrupted. The `sqlcmd` examples below remain available for automation and troubleshooting.
 
+## Database-target validation
+
+The operations console supports read-only candidate checks and process-local database switching. The initial target comes from `ConnectionStrings:Northstar`; a runtime selection uses the same authentication, encryption, and connection options and resets when the application restarts.
+
+### Validate through the operations console
+
+In the **Database target** panel, enter the candidate as two separate values:
+
+| Field | Example |
+|---|---|
+| **Server** | `agentservertest.database.windows.net` or `tcp:agentservertest.database.windows.net,1433` |
+| **Database** | `hotel_reservations` |
+
+The server value is a SQL host name, not an HTTP URL. The database value is the exact catalog name on that server.
+
+1. Record the value shown under **Current target**.
+2. Enter the candidate server and database.
+3. Select **Check readiness**.
+4. Confirm the panel reports **Ready to run workloads** and review each individual check.
+5. Select **Switch database** and accept the confirmation that workloads will stop.
+6. Confirm **Current target** changes to the candidate combination.
+7. Confirm the normal workload and all business activities remain stopped.
+8. Start one workload and verify its status and database metrics update normally.
+
+If the readiness panel reports **Not ready to switch**, do not attempt to fix the database through the application. Deploy the missing scripts or permissions separately, then rerun readiness. If switching fails, confirm **Current target** still shows the original server and database.
+
+The panel reuses the authentication settings in `ConnectionStrings:Northstar`; it cannot select a different identity, username, password, encryption mode, or token for an ad-hoc target. The configured identity must already be authorized on the candidate server and database.
+
+### Validate through the API
+
+With the host running, confirm the current target:
+
+```powershell
+Invoke-RestMethod "http://localhost:5055/api/database-target"
+```
+
+Create a candidate request:
+
+```powershell
+$target = @{
+  server = "tcp:<server>.database.windows.net,1433"
+  database = "<database>"
+} | ConvertTo-Json
+```
+
+Run the read-only readiness check:
+
+```powershell
+$readiness = Invoke-RestMethod `
+  "http://localhost:5055/api/database-target/check" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $target
+
+$readiness | ConvertTo-Json -Depth 5
+```
+
+A fully prepared database reports `Ready: true` and six checks:
+
+1. connection and database identity
+2. all fourteen required tables and fourteen required stored procedures
+3. `EXECUTE` permission for every workload procedure
+4. populated core workload bounds
+5. historical archive data
+6. operations monitoring access
+
+An empty `reporting.GuestStayHistoryArchive` produces a warning rather than a failure. Missing assets, missing procedure permissions, unusable workload bounds, a connection failure, or a database-identity mismatch makes the target not ready. Monitoring-access failure is a warning because loads can run, but console or threshold metrics may be unavailable.
+
+Switch to a ready target:
+
+```powershell
+$result = Invoke-RestMethod `
+  "http://localhost:5055/api/database-target/switch" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $target
+
+$result.activeTarget
+```
+
+Confirm:
+
+- `Switched` is `true`
+- `ActiveTarget` matches the requested server and database
+- the normal workload and all business activities are stopped
+- `/api/operations/status` succeeds against the new database
+- the console displays the new current target
+
+The switch endpoint repeats readiness checks immediately before activation. It stops and drains all workloads and does not restart them. A not-ready database or active threshold validation returns HTTP `409 Conflict` and leaves the active target unchanged. Invalid or empty target values return HTTP `400 Bad Request`.
+
+For a safe negative test, submit an empty server and database and confirm HTTP `400`:
+
+```powershell
+try {
+  Invoke-RestMethod `
+    "http://localhost:5055/api/database-target/check" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body '{"server":"","database":""}'
+}
+catch {
+  $_.Exception.Response.StatusCode
+}
+```
+
+Do not use an arbitrary reachable database for negative testing unless the application identity is expected to access it. Readiness checks never install or repair missing assets.
+
 ## Phase 1 execution
 
 Create or select an empty Azure SQL Database or SQL Server database. Connect with a principal that can create schemas and tables, then run:
@@ -178,6 +285,8 @@ dotnet run --project "src\Northstar.Operations\Northstar.Operations.csproj" `
 ```
 
 Open the URL reported by ASP.NET Core. Confirm the page title is **Northstar Reservations | Operations Console** and the initial workload state is **Stopped**.
+
+Before starting the workload, confirm the **Database target** panel displays the configured server and database. Select **Check readiness** and verify that the target is ready, all required checks pass, and the server and database inputs remain enabled after the check completes. Follow [Database-target validation](#database-target-validation) to test an actual switch.
 
 Select **Start workload** and verify:
 

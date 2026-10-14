@@ -12,10 +12,10 @@ Phase 1 establishes the data model. Phase 2 adds the normal workload and its dat
 |---|---|---|
 | `guest` | Guest identity and loyalty membership | `Guest` |
 | `property` | Hotels, sellable room types, and physical rooms | `Property`, `RoomType`, `Room` |
-| `reservation` | Booking headers, assigned rooms, and date-level inventory | `Reservation`, `ReservationRoom`, `RoomInventory` |
+| `reservation` | Booking headers, assigned rooms, date-level inventory, and modification history | `Reservation`, `ReservationRoom`, `RoomInventory`, `ReservationChange` |
 | `billing` | Reservation payment state and processor transactions | `Payment`, `PaymentTransaction` |
 | `operations` | Property check-in and housekeeping activity | `CheckIn`, `HousekeepingTask` |
-| `reporting` | Precalculated operational summaries | `PropertyDailySummary` |
+| `reporting` | Precalculated operational summaries and retained stay evidence | `PropertyDailySummary`, `GuestStayHistoryArchive` |
 
 Every transactional relationship is enforced by foreign keys. Business-state columns use check constraints, monetary values have range constraints, and natural identifiers have unique constraints. Reservation and inventory rows include `rowversion` values to support safe concurrent modification in later phases.
 
@@ -40,6 +40,7 @@ The `Northstar.Operations` ASP.NET Core host contains:
 
 - a database access layer using `Microsoft.Data.SqlClient`
 - a configurable normal-workload worker engine
+- read-only database readiness inspection and runtime target coordination
 - structured application logging
 - lightweight health endpoints for host and workload counters
 - realistic SQL connection application names: `Northstar Reservations API`, `Northstar Property Operations`, and `Northstar Reporting Service`
@@ -60,11 +61,21 @@ The workload is disabled by default and must be explicitly enabled. A positive r
 
 The Phase 3 console is served by the existing ASP.NET Core host using static HTML, CSS, and JavaScript. It deliberately avoids an additional front-end framework.
 
-The console calls three application endpoints:
+The console calls endpoint groups for database targeting, normal workload control, business activities, and threshold validation.
+
+Database targeting:
+
+- `GET /api/database-target`
+- `POST /api/database-target/check`
+- `POST /api/database-target/switch`
+
+Normal workload control:
 
 - `GET /api/operations/status`
 - `POST /api/operations/workload/start`
 - `POST /api/operations/workload/stop`
+
+Each business activity exposes status, start, and stop endpoints under `/api/activities/{activity-id}`. Threshold validation uses `/api/activities/{activity-id}/validation/status` and `/api/activities/{activity-id}/validation/start`.
 
 The workload coordinator serializes start and stop transitions, uses a dedicated cancellation token for each run, and keeps the web host alive when a run stops. Metrics reset at the beginning of each run. Requests per minute is a rolling count of completed operations during the preceding minute.
 
@@ -78,6 +89,32 @@ Database activity is read from `sys.dm_exec_requests` and `sys.dm_exec_sessions`
 - longest active user request in seconds
 
 Database metric failures are returned as API errors and surfaced visibly in the console rather than replaced with success-shaped values.
+
+### Runtime database targets
+
+The configured `ConnectionStrings:Northstar` value supplies the initial target and all authentication, encryption, and connection options. The browser submits only a server and database name. The server rebuilds candidate connections with `SqlConnectionStringBuilder`, replacing only `DataSource` and `InitialCatalog`; full connection strings, credentials, and access tokens are never returned to the browser.
+
+`DatabaseReadinessService` opens an independent candidate connection without changing the active target. It verifies:
+
+- the requested database identity
+- fourteen required tables and fourteen required stored procedures
+- `EXECUTE` permission on every workload procedure
+- usable Phase 1 workload bounds
+- the presence of retained guest-stay archive data
+- access to database request and Azure SQL resource telemetry
+
+Required-check failures make the target not ready. An empty archive is a warning because export and reconciliation can execute but have limited results. Monitoring-access failures are warnings because workload procedures can still run, though console or threshold metrics may be unavailable.
+
+`DatabaseTargetManager` owns a process-wide control gate shared by workload and threshold-validation start requests. A switch:
+
+1. acquires the control gate
+2. repeats readiness checks against the candidate
+3. rejects the operation if threshold validation is running
+4. stops and awaits the normal workload and all four business activities
+5. atomically replaces the connection factory's active target
+6. releases the gate with all workloads still stopped
+
+Repository operations create a new SQL connection for each unit of work. Draining the services before changing the target prevents a logical workload run from spanning two databases. Failed readiness or active validation leaves the current target unchanged. The target is intentionally process-local; restarting the host restores the configured connection-string target. Missing database assets are reported but never deployed automatically.
 
 ## Business activities
 
@@ -196,4 +233,6 @@ These targets are explicitly deferred from Phase 1 and will be tuned and validat
 
 ## Configuration and security
 
-No credentials are stored in SQL or source files. Later application phases will use standard ASP.NET configuration, environment variables, and user secrets. Microsoft Entra authentication will be preferred for Azure deployments while a normal development connection string remains supported.
+No credentials are stored in SQL or source files. The application uses standard ASP.NET configuration, environment variables, and user secrets. Microsoft Entra authentication is preferred for Azure deployments while a normal development connection string remains supported.
+
+Runtime database switching preserves the configured authentication and encryption settings. Only server and database names cross the browser boundary. Target values are length-checked, reject control characters, and are assigned through `SqlConnectionStringBuilder` rather than concatenated into a connection string. Switching never persists credentials or modifies user secrets.

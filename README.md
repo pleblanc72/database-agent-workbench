@@ -6,14 +6,15 @@ Northstar Reservations is a production-shaped hotel reservation sample for Azure
 
 Phases 1 through 7 are implemented. The repository contains:
 
-- six domain schemas and thirteen operational/reporting tables
+- six domain schemas and fourteen operational/reporting tables
 - keys, integrity constraints, baseline indexes, and row-version columns
 - deterministic room-type reference data
 - configurable, set-based generation of properties, rooms, guests, reservations, inventory, payments, stays, housekeeping work, and daily summaries
 - normal application stored procedures for search, retrieval, creation, modification, cancellation, payments, check-in, room status, and property performance
 - an ASP.NET Core normal-workload host with configurable concurrent workers
-- a web operations console with normal-workload controls and live database activity
-- independently controlled blocking, CPU, and storage-I/O business activities
+- a web operations console with normal-workload controls, live database activity, and runtime database-target switching
+- independently controlled blocking, CPU, storage-I/O, and long-running-request business activities
+- read-only database readiness checks for required assets, data, permissions, and monitoring access
 - realistic SQL connection application names and structured logging
 - SQL validation for the database foundation and normal workload
 
@@ -50,6 +51,7 @@ docs/
 
 - Azure SQL Database or a compatible SQL Server instance
 - A database principal allowed to create schemas, tables, constraints, and indexes
+- An application identity allowed to execute the workload procedures and read the monitoring views used by the console
 - .NET 10 SDK
 - A SQL client that supports batch separators (`GO`), such as SQL Server Management Studio, Azure Data Studio, the VS Code MSSQL extension, or `sqlcmd`
 
@@ -93,7 +95,43 @@ Now listening on: http://localhost:5055
 
 Open [http://localhost:5055](http://localhost:5055) in a browser. Keep the terminal running while using the console. Select **Start workload** to begin normal reservation activity and **Stop workload** to stop it without shutting down the console.
 
-The **Database target** panel can check and switch to another SQL server and database without restarting the application. Enter the server and database names, select **Check readiness**, review the required assets, data, permissions, and monitoring results, and then select **Switch database**. A successful switch stops all running workloads and leaves them stopped. The application reuses the authentication settings from the configured `ConnectionStrings:Northstar` connection string; credentials and tokens are never sent to the browser. The selected target lasts for the current application process; restarting the app restores the configured connection-string target.
+### Switch the server and database
+
+Use the **Database target** panel at the top of the operations console to change targets without restarting the application.
+
+Enter the SQL host and database as separate values:
+
+| Field | Example | Notes |
+|---|---|---|
+| **Server** | `agentservertest.database.windows.net` | A SQL Server host name, not an `https://` URL. `tcp:agentservertest.database.windows.net,1433` is also valid. |
+| **Database** | `hotel_reservations` | The exact database name on that server. |
+
+To switch:
+
+1. Enter the new value in **Server**.
+2. Enter the matching value in **Database**.
+3. Select **Check readiness**.
+4. Review every result. Required checks must pass; warnings explain limited optional behavior.
+5. Select **Switch database** and confirm the prompt.
+6. Verify **Current target** displays the requested server/database combination.
+7. Start the desired workload. A switch never starts workloads automatically.
+
+The current target remains active if readiness fails. A successful switch stops and drains all running workloads before changing the target, then leaves them stopped.
+
+The panel changes only the server and database. It reuses authentication, encryption, timeout, and other connection settings from `ConnectionStrings:Northstar`. For example, when the configured connection uses `Authentication=Active Directory Default`, the current Microsoft Entra identity must already have access to the new server and database. If a target requires different authentication settings, update the secure connection configuration and restart the application instead of using the panel.
+
+Credentials, connection strings, and tokens are never sent to the browser. The selected target lasts for the current application process; restarting the app restores the server and database from `ConnectionStrings:Northstar`.
+
+Readiness is required before a switch. The application checks:
+
+- connection and database identity
+- all fourteen required tables and fourteen required stored procedures
+- `EXECUTE` permission for every workload procedure
+- populated core workload bounds
+- retained guest-stay archive data
+- access to database activity and Azure SQL resource telemetry
+
+A failed required check leaves the current target unchanged. An empty historical archive is reported as a warning because the loads can start, but export and reconciliation results will be limited. Switching is blocked while threshold validation is running. The application never deploys missing database objects automatically.
 
 Press `Ctrl+C` in the terminal to shut down the application. If the browser reports that it cannot reach the page, confirm that the `dotnet run` command is still running and use the exact URL printed after `Now listening on:`.
 
@@ -149,6 +187,7 @@ dotnet run --project "src\Northstar.Operations\Northstar.Operations.csproj"
 
 Open the URL shown in the application output, normally `http://localhost:5055`. The console provides:
 
+- ad-hoc server and database readiness checks and runtime switching
 - normal workload start and stop controls
 - normal-workload requests per minute, workers, completions, and failures
 - database-wide active and blocked request counts
@@ -156,6 +195,23 @@ Open the URL shown in the application output, normally `http://localhost:5055`. 
 - activity-specific workers, throughput per minute, completions, and failures
 
 The console refreshes every two seconds. Normal-workload metrics change only when the normal workload is running. Database activity metrics include the normal workload and all business activities. A configured positive run duration stops the workload when reached but keeps the console running.
+
+The database-target API is also available for automation:
+
+```powershell
+$target = @{
+  server = "tcp:<server>.database.windows.net,1433"
+  database = "<database>"
+} | ConvertTo-Json
+
+Invoke-RestMethod "http://localhost:5055/api/database-target"
+Invoke-RestMethod "http://localhost:5055/api/database-target/check" `
+  -Method Post -ContentType "application/json" -Body $target
+Invoke-RestMethod "http://localhost:5055/api/database-target/switch" `
+  -Method Post -ContentType "application/json" -Body $target
+```
+
+The check endpoint is read-only. The switch endpoint repeats readiness checks, stops and drains every running workload, changes the target atomically, and leaves all workloads stopped. It returns HTTP `409 Conflict` when readiness fails or threshold validation is active, and HTTP `400 Bad Request` for an invalid server or database value.
 
 Each business-activity card identifies the database threshold it is designed to trigger. Select **Run validation** to execute its fixed threshold validation through the application's configured database connection. If the activity is stopped, validation starts it automatically and stops it when sampling finishes. An activity that was already running is left running. Validation runs in the background and the card reports **Starting**, **Running**, **Passed**, or **Failed** without requiring `sqlcmd`. Only one threshold validation runs at a time, and an activity cannot be stopped from the card while its validation is collecting samples. The normal workload does not need to be running.
 
